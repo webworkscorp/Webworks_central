@@ -2,11 +2,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { KPIReport, ClientDetail, Diagnosis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// Fix: Change Client to ClientDetail to match types.ts export
 export const getBusinessDiagnosis = async (kpis: KPIReport, clients: ClientDetail[]): Promise<Diagnosis> => {
   try {
+    // Inicialización dentro de la función para mayor estabilidad en Vercel/Production
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Actúa como un Director de Operaciones (COO) senior. Analiza los KPIs de este periodo:

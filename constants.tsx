@@ -4,14 +4,16 @@ import {
   LayoutDashboard, 
   CreditCard, 
   Target, 
-  Beaker
+  Beaker,
+  Users
 } from 'lucide-react';
 
 export const NAVIGATION_TABS = [
-  { id: 'dashboard', icon: <LayoutDashboard size={20} />, label: 'Resumen' },
-  { id: 'clients', icon: <CreditCard size={20} />, label: 'Finanzas' },
-  { id: 'ads', icon: <Target size={20} />, label: 'Marketing' },
-  { id: 'lab', icon: <Beaker size={20} />, label: 'Auditoría' },
+  { id: 'dashboard', icon: <LayoutDashboard size={18} />, label: 'Resumen' },
+  { id: 'finance', icon: <CreditCard size={18} />, label: 'Finanzas' },
+  { id: 'clients_list', icon: <Users size={18} />, label: 'Clientes' },
+  { id: 'ads', icon: <Target size={18} />, label: 'Marketing' },
+  { id: 'lab', icon: <Beaker size={18} />, label: 'Auditoría' },
 ] as const;
 
 export const MONTH_NAMES = [

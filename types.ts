@@ -31,7 +31,7 @@ export interface DateRange {
 }
 
 export interface BusinessState {
-  currentTab: 'dashboard' | 'clients' | 'ads' | 'lab';
+  currentTab: 'dashboard' | 'finance' | 'clients_list' | 'ads' | 'lab';
   activeRange: DateRange;
   viewingMonth: number;
   dataStore: Record<string, DailyData>;
