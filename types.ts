@@ -34,6 +34,7 @@ export interface BusinessState {
   currentTab: 'dashboard' | 'finance' | 'clients_list' | 'ads' | 'lab';
   activeRange: DateRange;
   viewingMonth: number;
+  viewingYear: number;
   dataStore: Record<string, DailyData>;
   clients: ClientDetail[];
   settings: BusinessSettings;

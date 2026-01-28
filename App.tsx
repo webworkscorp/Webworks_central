@@ -35,8 +35,7 @@ import {
 import { 
   NAVIGATION_TABS, 
   MONTH_NAMES, 
-  WEEK_DAYS_SHORT, 
-  YEAR_ACTIVE
+  WEEK_DAYS_SHORT
 } from './constants';
 import { getBusinessDiagnosis } from './services/geminiService';
 
@@ -44,7 +43,7 @@ import { getBusinessDiagnosis } from './services/geminiService';
 
 const getDateKey = (date: Date) => {
   const d = new Date(date);
-  if (isNaN(d.getTime())) return '2026-01-01';
+  if (isNaN(d.getTime())) return '2025-01-01';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
@@ -70,8 +69,10 @@ const getDaysInMonth = (month: number, year: number): CalendarDay[] => {
     const dayNameIndex = (date.getDay() === 0 ? 6 : date.getDay() - 1);
     const dayName = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dayNameIndex] as DayName;
     
-    // RESTRICCIÓN SOLICITADA: En Diciembre (11) solo mostrar del 29 al 31
-    if (month !== 11 || dayOfMonth >= 29) {
+    // RESTRICCIÓN SOLICITADA: Diciembre 2025 (11, 2025) solo mostrar del 29 al 31
+    // Diciembre 2026 (11, 2026) y otros meses/años se muestran completos.
+    const isDec2025 = year === 2025 && month === 11;
+    if (!isDec2025 || dayOfMonth >= 29) {
       days.push({
         date: new Date(date),
         dayNumber: dayOfMonth,
@@ -350,17 +351,19 @@ const DataEntryPanel = ({ isOpen, onClose, dateLabel, currentData, currentClient
 
 export default function App() {
   const [state, setState] = useState<BusinessState>(() => {
-    // ESTADO INICIAL: Diciembre 29, 2026
+    // ESTADO INICIAL: Diciembre 29, 2025
     const initialMonth = 11; // Diciembre
     const initialDay = 29;
+    const initialYear = 2025;
     
     const defaultState: BusinessState = {
       currentTab: 'dashboard',
       viewingMonth: initialMonth,
+      viewingYear: initialYear,
       activeRange: {
-        start: new Date(YEAR_ACTIVE, initialMonth, initialDay),
-        end: new Date(YEAR_ACTIVE, initialMonth, initialDay),
-        label: `${initialDay} ${MONTH_NAMES[initialMonth]}`,
+        start: new Date(initialYear, initialMonth, initialDay),
+        end: new Date(initialYear, initialMonth, initialDay),
+        label: `${initialDay} ${MONTH_NAMES[initialMonth]} ${initialYear}`,
         mode: 'dia'
       },
       dataStore: {},
@@ -404,7 +407,7 @@ export default function App() {
     try {
       const iter = new Date(start);
       let safety = 0;
-      while (iter <= end && safety < 366) {
+      while (iter <= end && safety < 1000) {
         const key = getDateKey(iter);
         const data = state.dataStore[key];
         if (data) {
@@ -452,7 +455,7 @@ export default function App() {
       activeRange: {
         start: day.date,
         end: day.date,
-        label: `${day.dayNumber} ${MONTH_NAMES[day.date.getMonth()]}`,
+        label: `${day.dayNumber} ${MONTH_NAMES[day.date.getMonth()]} ${day.date.getFullYear()}`,
         mode: 'dia'
       }
     }));
@@ -461,17 +464,37 @@ export default function App() {
 
   const changeViewingMonth = useCallback((direction: 'next' | 'prev') => {
     setState(prev => {
-      const current = prev.viewingMonth;
-      const next = direction === 'next' ? Math.min(11, current + 1) : Math.max(0, current - 1);
-      return { ...prev, viewingMonth: next };
+      let nextMonth = prev.viewingMonth;
+      let nextYear = prev.viewingYear;
+      
+      if (direction === 'next') {
+        if (nextMonth === 11) {
+          nextMonth = 0;
+          nextYear++;
+        } else {
+          nextMonth++;
+        }
+      } else {
+        if (nextMonth === 0) {
+          nextMonth = 11;
+          nextYear--;
+        } else {
+          nextMonth--;
+        }
+      }
+
+      // Restricción: No navegar antes de Diciembre 2025
+      if (nextYear < 2025 || (nextYear === 2025 && nextMonth < 11)) {
+        return prev;
+      }
+
+      return { ...prev, viewingMonth: nextMonth, viewingYear: nextYear };
     });
   }, []);
 
-  // Fix: Added handleSaveData to save daily entries and associated clients.
   const handleSaveData = useCallback((daily: DailyData, clientDetails: Partial<ClientDetail>[]) => {
     const key = getDateKey(selectedDate);
     
-    // Prepare clients with appropriate IDs and their corresponding dateKey.
     const processedClients: ClientDetail[] = clientDetails.map((c, idx) => ({
       id: c.id || `${key}-${Date.now()}-${idx}`,
       name: c.name || '',
@@ -482,9 +505,7 @@ export default function App() {
     }));
 
     setState(prev => {
-      // Filter out existing clients for this specific date to replace them with updated data.
       const otherClients = prev.clients.filter(c => c.dateKey !== key);
-      
       return {
         ...prev,
         dataStore: {
@@ -704,7 +725,7 @@ export default function App() {
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[state.viewingMonth]} {YEAR_ACTIVE}</span>
+                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[state.viewingMonth]} {state.viewingYear}</span>
                 <button 
                   onClick={() => changeViewingMonth('next')} 
                   className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
@@ -717,13 +738,13 @@ export default function App() {
               <div className="grid grid-cols-7 gap-y-1 text-center">
                 {WEEK_DAYS_SHORT.map(d => <span key={d} className="text-[8px] font-black text-slate-300 uppercase pb-2">{d}</span>)}
                 {(() => {
-                  const days = getDaysInMonth(state.viewingMonth, YEAR_ACTIVE);
+                  const days = getDaysInMonth(state.viewingMonth, state.viewingYear);
                   if (days.length === 0) return null;
                   const firstDayInGrid = days[0].date.getDay();
                   const offset = firstDayInGrid === 0 ? 6 : firstDayInGrid - 1;
                   return Array.from({ length: offset }).map((_, i) => <div key={`pad-${i}`} />);
                 })()}
-                {getDaysInMonth(state.viewingMonth, YEAR_ACTIVE).map(day => {
+                {getDaysInMonth(state.viewingMonth, state.viewingYear).map(day => {
                   const key = getDateKey(day.date);
                   const hasData = !!state.dataStore[key];
                   const isSelected = getDateKey(selectedDate) === key;
@@ -747,7 +768,7 @@ export default function App() {
       {/* MODAL REGISTRO */}
       <DataEntryPanel 
         isOpen={isEntryOpen} onClose={() => setIsEntryOpen(false)} 
-        dateLabel={selectedDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+        dateLabel={selectedDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         currentData={state.dataStore[getDateKey(selectedDate)]}
         currentClients={state.clients.filter(c => c.dateKey === getDateKey(selectedDate))}
         onSave={handleSaveData}
