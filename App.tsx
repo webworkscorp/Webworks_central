@@ -20,8 +20,9 @@ import {
   AlertCircle,
   PieChart,
   FileText,
-  ArrowUpRight,
-  ArrowDownRight
+  CalendarDays,
+  CalendarRange,
+  CheckCircle2
 } from 'lucide-react';
 import { 
   SelectionMode, 
@@ -69,8 +70,7 @@ const getDaysInMonth = (month: number, year: number): CalendarDay[] => {
     const dayNameIndex = (date.getDay() === 0 ? 6 : date.getDay() - 1);
     const dayName = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dayNameIndex] as DayName;
     
-    // RESTRICCIÓN SOLICITADA: Diciembre 2025 (11, 2025) solo mostrar del 29 al 31
-    // Diciembre 2026 (11, 2026) y otros meses/años se muestran completos.
+    // RESTRICCIÓN: Diciembre 2025 (11, 2025) solo mostrar del 29 al 31
     const isDec2025 = year === 2025 && month === 11;
     if (!isDec2025 || dayOfMonth >= 29) {
       days.push({
@@ -351,7 +351,6 @@ const DataEntryPanel = ({ isOpen, onClose, dateLabel, currentData, currentClient
 
 export default function App() {
   const [state, setState] = useState<BusinessState>(() => {
-    // ESTADO INICIAL: Diciembre 29, 2025
     const initialMonth = 11; // Diciembre
     const initialDay = 29;
     const initialYear = 2025;
@@ -368,7 +367,8 @@ export default function App() {
       },
       dataStore: {},
       clients: [],
-      settings: { avgTicketValue: 45000, marginPercentage: 0.65 }
+      settings: { avgTicketValue: 45000, marginPercentage: 0.65 },
+      selectedMonths: [`${initialYear}-${initialMonth}`]
     };
 
     try {
@@ -390,6 +390,7 @@ export default function App() {
   });
 
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [calendarMode, setCalendarMode] = useState<'days' | 'months'>('days');
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date(state.activeRange.start));
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
@@ -457,9 +458,54 @@ export default function App() {
         end: day.date,
         label: `${day.dayNumber} ${MONTH_NAMES[day.date.getMonth()]} ${day.date.getFullYear()}`,
         mode: 'dia'
-      }
+      },
+      selectedMonths: [`${day.date.getFullYear()}-${day.date.getMonth()}`]
     }));
     setIsFilterOpen(false);
+  }, []);
+
+  const toggleMonthSelection = useCallback((year: number, month: number) => {
+    const key = `${year}-${month}`;
+    setState(prev => {
+      let nextSelected: string[] = prev.selectedMonths || [];
+      if (nextSelected.includes(key)) {
+        nextSelected = nextSelected.filter(k => k !== key);
+      } else {
+        nextSelected = [...nextSelected, key];
+      }
+
+      if (nextSelected.length === 0) return prev;
+
+      // Sort and get range
+      const sorted = nextSelected.map(k => {
+        const [y, m] = k.split('-').map(Number);
+        return { year: y, month: m, timestamp: new Date(y, m, 1).getTime() };
+      }).sort((a, b) => a.timestamp - b.timestamp);
+
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      
+      const start = new Date(first.year, first.month, 1);
+      const end = new Date(last.year, last.month + 1, 0);
+
+      let label = "";
+      if (nextSelected.length === 1) {
+        label = `Todo ${MONTH_NAMES[first.month]} ${first.year}`;
+      } else {
+        label = `Periodo Personalizado (${nextSelected.length} meses)`;
+      }
+
+      return {
+        ...prev,
+        selectedMonths: nextSelected,
+        activeRange: {
+          start,
+          end,
+          label,
+          mode: 'multi_mes'
+        }
+      };
+    });
   }, []);
 
   const changeViewingMonth = useCallback((direction: 'next' | 'prev') => {
@@ -483,7 +529,6 @@ export default function App() {
         }
       }
 
-      // Restricción: No navegar antes de Diciembre 2025
       if (nextYear < 2025 || (nextYear === 2025 && nextMonth < 11)) {
         return prev;
       }
@@ -518,6 +563,10 @@ export default function App() {
     
     setIsEntryOpen(false);
   }, [selectedDate]);
+
+  const isMonthSelected = (year: number, month: number) => {
+    return state.selectedMonths?.includes(`${year}-${month}`);
+  };
 
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-[#FBFBFD] text-slate-900 overflow-hidden relative border-x border-slate-50 shadow-2xl">
@@ -711,55 +760,112 @@ export default function App() {
       {isFilterOpen && (
         <div className="fixed inset-0 z-[1500] flex items-end justify-center px-4 pb-12 fade-in-fast">
           <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => setIsFilterOpen(false)} />
-          <div className="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[80vh] premium-entrance">
+          <div className="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[85vh] premium-entrance">
             <div className="px-6 pt-8 pb-4 flex justify-between items-center border-b border-slate-50">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-tighter">Navegador</h3>
+              <div className="flex bg-slate-100 p-1 rounded-xl w-32">
+                <button 
+                  onClick={() => setCalendarMode('days')}
+                  className={`flex-1 py-1 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all ${calendarMode === 'days' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                >
+                  Días
+                </button>
+                <button 
+                  onClick={() => setCalendarMode('months')}
+                  className={`flex-1 py-1 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all ${calendarMode === 'months' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                >
+                  Meses
+                </button>
+              </div>
               <button onClick={() => setIsFilterOpen(false)} className="p-2 bg-slate-50 rounded-lg text-slate-400 active:scale-90 transition-all"><X size={16} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
-              {/* Selector de Mes */}
-              <div className="flex items-center justify-between border border-slate-100 p-3 rounded-xl bg-slate-50/50">
-                <button 
-                  onClick={() => changeViewingMonth('prev')} 
-                  className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[state.viewingMonth]} {state.viewingYear}</span>
-                <button 
-                  onClick={() => changeViewingMonth('next')} 
-                  className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
 
-              {/* Grid del Calendario */}
-              <div className="grid grid-cols-7 gap-y-1 text-center">
-                {WEEK_DAYS_SHORT.map(d => <span key={d} className="text-[8px] font-black text-slate-300 uppercase pb-2">{d}</span>)}
-                {(() => {
-                  const days = getDaysInMonth(state.viewingMonth, state.viewingYear);
-                  if (days.length === 0) return null;
-                  const firstDayInGrid = days[0].date.getDay();
-                  const offset = firstDayInGrid === 0 ? 6 : firstDayInGrid - 1;
-                  return Array.from({ length: offset }).map((_, i) => <div key={`pad-${i}`} />);
-                })()}
-                {getDaysInMonth(state.viewingMonth, state.viewingYear).map(day => {
-                  const key = getDateKey(day.date);
-                  const hasData = !!state.dataStore[key];
-                  const isSelected = getDateKey(selectedDate) === key;
-                  return (
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+              
+              {calendarMode === 'days' ? (
+                <>
+                  {/* Selector de Mes */}
+                  <div className="flex items-center justify-between border border-slate-100 p-3 rounded-xl bg-slate-50/50">
                     <button 
-                      key={day.dayNumber} 
-                      onClick={() => selectDay(day)} 
-                      className={`group relative py-3.5 flex flex-col items-center rounded-lg transition-all active:scale-90 ${isSelected ? 'bg-slate-900 text-white shadow-lg' : hasData ? 'text-sky-600 bg-sky-50/50' : 'text-slate-400 hover:bg-slate-50'}`}
+                      onClick={() => changeViewingMonth('prev')} 
+                      className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
                     >
-                      <span className="text-[10px] font-bold">{day.dayNumber}</span>
-                      {hasData && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-sky-500 rounded-full" />}
+                      <ChevronLeft size={16} />
                     </button>
-                  );
-                })}
-              </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[state.viewingMonth]}</span>
+                      <span className="text-[8px] font-bold text-slate-400">{state.viewingYear}</span>
+                    </div>
+                    <button 
+                      onClick={() => changeViewingMonth('next')} 
+                      className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  {/* Grid del Calendario */}
+                  <div className="grid grid-cols-7 gap-y-1 text-center">
+                    {WEEK_DAYS_SHORT.map(d => <span key={d} className="text-[8px] font-black text-slate-300 uppercase pb-2">{d}</span>)}
+                    {(() => {
+                      const days = getDaysInMonth(state.viewingMonth, state.viewingYear);
+                      if (days.length === 0) return null;
+                      const firstDayInGrid = days[0].date.getDay();
+                      const offset = firstDayInGrid === 0 ? 6 : firstDayInGrid - 1;
+                      return Array.from({ length: offset }).map((_, i) => <div key={`pad-${i}`} />);
+                    })()}
+                    {getDaysInMonth(state.viewingMonth, state.viewingYear).map(day => {
+                      const key = getDateKey(day.date);
+                      const hasData = !!state.dataStore[key];
+                      const isSelected = getDateKey(selectedDate) === key;
+                      return (
+                        <button 
+                          key={day.dayNumber} 
+                          onClick={() => selectDay(day)} 
+                          className={`group relative py-3.5 flex flex-col items-center rounded-lg transition-all active:scale-90 ${isSelected ? 'bg-slate-900 text-white shadow-lg' : hasData ? 'text-sky-600 bg-sky-50/50' : 'text-slate-400 hover:bg-slate-50'}`}
+                        >
+                          <span className="text-[10px] font-bold">{day.dayNumber}</span>
+                          {hasData && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-sky-500 rounded-full" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-8 fade-in-fast">
+                  {/* Selector de Años y Meses */}
+                  {[2025, 2026].map(year => (
+                    <div key={year} className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2">{year}</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        {Array.from({ length: 12 }).map((_, m) => {
+                          const isDec2025Only = year === 2025 && m < 11;
+                          if (isDec2025Only) return null;
+                          
+                          const selected = isMonthSelected(year, m);
+                          return (
+                            <button 
+                              key={`${year}-${m}`}
+                              onClick={() => toggleMonthSelection(year, m)}
+                              className={`relative flex flex-col items-center justify-center py-4 rounded-2xl border transition-all active:scale-95 ${selected ? 'bg-sky-600 border-sky-600 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white hover:border-sky-200'}`}
+                            >
+                              <span className="text-[10px] font-black uppercase tracking-widest">{MONTH_NAMES[m].slice(0, 3)}</span>
+                              {selected && <CheckCircle2 size={10} className="absolute top-2 right-2" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t border-slate-50">
+                    <button 
+                      onClick={() => setIsFilterOpen(false)}
+                      className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all"
+                    >
+                      Aplicar Selección
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

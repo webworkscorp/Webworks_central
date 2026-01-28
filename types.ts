@@ -1,5 +1,5 @@
 
-export type SelectionMode = 'dia' | 'semana' | 'quincena' | 'mes' | 'rango';
+export type SelectionMode = 'dia' | 'semana' | 'quincena' | 'mes' | 'rango' | 'multi_mes';
 
 export interface ClientDetail {
   id: string;
@@ -38,6 +38,7 @@ export interface BusinessState {
   dataStore: Record<string, DailyData>;
   clients: ClientDetail[];
   settings: BusinessSettings;
+  selectedMonths?: string[]; // Array of "YYYY-MM"
 }
 
 export type DayName = 'Lunes' | 'Martes' | 'Miércoles' | 'Jueves' | 'Viernes' | 'Sábado' | 'Domingo';
