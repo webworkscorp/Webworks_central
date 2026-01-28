@@ -4,8 +4,8 @@ import { KPIReport, ClientDetail, Diagnosis } from "../types";
 
 export const getBusinessDiagnosis = async (kpis: KPIReport, clients: ClientDetail[]): Promise<Diagnosis> => {
   try {
-    // Inicialización dentro de la función para mayor estabilidad en Vercel/Production
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+    // Initialize GoogleGenAI directly within the function using process.env.API_KEY as per guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -40,6 +40,7 @@ export const getBusinessDiagnosis = async (kpis: KPIReport, clients: ClientDetai
       }
     });
 
+    // Directly access the text property from the response.
     return JSON.parse(response.text || "{}") as Diagnosis;
   } catch (error) {
     console.error("Error en Diagnóstico:", error);

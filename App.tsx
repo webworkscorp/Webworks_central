@@ -15,18 +15,13 @@ import {
   Sparkles,
   Layers,
   BrainCircuit,
-  BarChart3,
   TrendingUp,
   ExternalLink,
   AlertCircle,
-  Settings,
-  CreditCard,
-  Briefcase,
-  Activity,
-  ArrowUpRight,
-  ArrowDownRight,
   PieChart,
-  FileText
+  FileText,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import { 
   SelectionMode, 
@@ -69,21 +64,24 @@ const parseFormattedNumber = (val: string): number => {
 const getDaysInMonth = (month: number, year: number): CalendarDay[] => {
   const date = new Date(year, month, 1);
   const days: CalendarDay[] = [];
-  let firstDay = date.getDay();
-  let offset = firstDay === 0 ? 6 : firstDay - 1;
+  
   while (date.getMonth() === month) {
     const dayOfMonth = date.getDate();
     const dayNameIndex = (date.getDay() === 0 ? 6 : date.getDay() - 1);
     const dayName = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dayNameIndex] as DayName;
-    days.push({
-      date: new Date(date),
-      dayNumber: dayOfMonth,
-      dayName,
-      weekNumber: Math.ceil((dayOfMonth + offset) / 7),
-      fortnight: dayOfMonth <= 15 ? 1 : 2,
-      isToday: false,
-      isSelected: false
-    });
+    
+    // RESTRICCIÓN SOLICITADA: En Diciembre (11) solo mostrar del 29 al 31
+    if (month !== 11 || dayOfMonth >= 29) {
+      days.push({
+        date: new Date(date),
+        dayNumber: dayOfMonth,
+        dayName,
+        weekNumber: Math.ceil((dayOfMonth + (new Date(year, month, 1).getDay() === 0 ? 6 : new Date(year, month, 1).getDay() - 1)) / 7),
+        fortnight: dayOfMonth <= 15 ? 1 : 2,
+        isToday: false,
+        isSelected: false
+      });
+    }
     date.setDate(date.getDate() + 1);
   }
   return days;
@@ -272,7 +270,7 @@ const DataEntryPanel = ({ isOpen, onClose, dateLabel, currentData, currentClient
                   <input 
                     type="text" 
                     inputMode="numeric"
-                    value={item.isCurrency ? formatCurrency(parseInt(inputs[item.field as keyof typeof inputs]) || 0) : (inputs[item.field as keyof typeof inputs])} 
+                    value={item.isCurrency ? formatCurrency(parseInt(inputs[item.field as keyof typeof inputs] || '0')) : (inputs[item.field as keyof typeof inputs])} 
                     onChange={e => handleNumericChange(item.field, e.target.value)}
                     className="w-full bg-transparent text-lg font-extrabold text-slate-900 focus:outline-none placeholder:text-slate-200"
                     placeholder={item.isCurrency ? "₡0" : "0"}
@@ -352,14 +350,17 @@ const DataEntryPanel = ({ isOpen, onClose, dateLabel, currentData, currentClient
 
 export default function App() {
   const [state, setState] = useState<BusinessState>(() => {
-    const today = new Date();
+    // ESTADO INICIAL: Diciembre 29, 2026
+    const initialMonth = 11; // Diciembre
+    const initialDay = 29;
+    
     const defaultState: BusinessState = {
       currentTab: 'dashboard',
-      viewingMonth: today.getMonth(),
+      viewingMonth: initialMonth,
       activeRange: {
-        start: new Date(YEAR_ACTIVE, today.getMonth(), today.getDate()),
-        end: new Date(YEAR_ACTIVE, today.getMonth(), today.getDate()),
-        label: `${today.getDate()} ${MONTH_NAMES[today.getMonth()]}`,
+        start: new Date(YEAR_ACTIVE, initialMonth, initialDay),
+        end: new Date(YEAR_ACTIVE, initialMonth, initialDay),
+        label: `${initialDay} ${MONTH_NAMES[initialMonth]}`,
         mode: 'dia'
       },
       dataStore: {},
@@ -458,43 +459,44 @@ export default function App() {
     setIsFilterOpen(false);
   }, []);
 
-  const selectRange = useCallback((mode: SelectionMode) => {
+  const changeViewingMonth = useCallback((direction: 'next' | 'prev') => {
     setState(prev => {
-      const m = prev.viewingMonth;
-      let start, end, label;
-      if (mode === 'mes') {
-        start = new Date(YEAR_ACTIVE, m, 1);
-        end = new Date(YEAR_ACTIVE, m + 1, 0);
-        label = `${MONTH_NAMES[m]} ${YEAR_ACTIVE}`;
-      } else {
-        const fn = selectedDate.getDate() <= 15 ? 1 : 2;
-        start = new Date(YEAR_ACTIVE, m, fn === 1 ? 1 : 16);
-        end = new Date(YEAR_ACTIVE, m, fn === 1 ? 15 : new Date(YEAR_ACTIVE, m + 1, 0).getDate());
-        label = `${fn}ª Qna. ${MONTH_NAMES[m]}`;
-      }
-      return { ...prev, activeRange: { start, end, label, mode } };
+      const current = prev.viewingMonth;
+      const next = direction === 'next' ? Math.min(11, current + 1) : Math.max(0, current - 1);
+      return { ...prev, viewingMonth: next };
     });
-    setIsFilterOpen(false);
-  }, [selectedDate]);
+  }, []);
 
-  const handleSaveData = useCallback((daily: DailyData, clientInputs: Partial<ClientDetail>[]) => {
+  // Fix: Added handleSaveData to save daily entries and associated clients.
+  const handleSaveData = useCallback((daily: DailyData, clientDetails: Partial<ClientDetail>[]) => {
     const key = getDateKey(selectedDate);
-    const updatedClients = state.clients.filter(c => c.dateKey !== key);
-    const newClients = clientInputs.map((c, i) => ({
-      id: c.id || Math.random().toString(36).substr(2, 9),
-      name: c.name || `Proyecto ${i + 1}`,
+    
+    // Prepare clients with appropriate IDs and their corresponding dateKey.
+    const processedClients: ClientDetail[] = clientDetails.map((c, idx) => ({
+      id: c.id || `${key}-${Date.now()}-${idx}`,
+      name: c.name || '',
       amount: c.amount || 0,
-      status: 'entregado' as const,
+      status: c.status || 'entregado',
       link: c.link || '',
       dateKey: key
     }));
-    setState(prev => ({
-      ...prev,
-      dataStore: { ...prev.dataStore, [key]: daily },
-      clients: [...updatedClients, ...newClients]
-    }));
+
+    setState(prev => {
+      // Filter out existing clients for this specific date to replace them with updated data.
+      const otherClients = prev.clients.filter(c => c.dateKey !== key);
+      
+      return {
+        ...prev,
+        dataStore: {
+          ...prev.dataStore,
+          [key]: daily
+        },
+        clients: [...otherClients, ...processedClients]
+      };
+    });
+    
     setIsEntryOpen(false);
-  }, [selectedDate, state.clients]);
+  }, [selectedDate]);
 
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-[#FBFBFD] text-slate-900 overflow-hidden relative border-x border-slate-50 shadow-2xl">
@@ -566,99 +568,29 @@ export default function App() {
               </div>
             </div>
 
-            {/* ESTADO DE RESULTADOS (INCOME STATEMENT) */}
             <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6 premium-entrance">
               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-sky-50 rounded-lg text-sky-600"><FileText size={16} /></div>
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-tight">Estado de Resultados</h3>
                 </div>
-                <span className="text-[8px] font-bold text-slate-300 uppercase">Período Seleccionado</span>
               </div>
 
               <div className="space-y-4">
-                {/* Ingresos */}
                 <div className="flex justify-between items-center group">
-                  <div className="space-y-0.5">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Ingresos Brutos</p>
-                    <div className="flex items-center space-x-1 text-emerald-600 font-bold">
-                      <ArrowUpRight size={10} />
-                      <span className="text-[8px] uppercase">Ventas Directas</span>
-                    </div>
-                  </div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Ingresos Brutos</p>
                   <span className="text-sm font-black text-slate-900">{formatCurrency(metrics.revenue)}</span>
                 </div>
-
-                {/* Gastos (Ads) */}
                 <div className="flex justify-between items-center group">
-                  <div className="space-y-0.5">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Gasto Operativo (Ads)</p>
-                    <div className="flex items-center space-x-1 text-rose-500 font-bold">
-                      <ArrowDownRight size={10} />
-                      <span className="text-[8px] uppercase">Publicidad & Adq.</span>
-                    </div>
-                  </div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Gasto Operativo (Ads)</p>
                   <span className="text-sm font-black text-rose-500">({formatCurrency(metrics.adSpend)})</span>
                 </div>
-
                 <div className="h-px bg-slate-50 w-full" />
-
-                {/* Utilidad Neta */}
                 <div className="flex justify-between items-center group bg-slate-50 p-4 rounded-2xl">
-                  <div className="space-y-0.5">
-                    <p className="text-[9px] font-black text-slate-900 uppercase tracking-wider">Utilidad Neta</p>
-                    <span className="text-[8px] font-bold text-slate-400 uppercase">Resultado del Ejercicio</span>
-                  </div>
+                  <p className="text-[9px] font-black text-slate-900 uppercase tracking-wider">Utilidad Neta</p>
                   <span className={`text-base font-black ${metrics.profit >= 0 ? 'text-sky-600' : 'text-rose-600'}`}>
                     {formatCurrency(metrics.profit)}
                   </span>
-                </div>
-              </div>
-
-              {/* BARRA DE PORCENTAJES DE EFICIENCIA */}
-              <div className="pt-2 space-y-4">
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[8px] font-black uppercase tracking-widest">
-                    <span className="text-slate-400">Margen de Beneficio</span>
-                    <span className="text-emerald-600">{metrics.marginPercent.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" 
-                      style={{ width: `${Math.min(metrics.marginPercent, 100)}%` }} 
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[8px] font-black uppercase tracking-widest">
-                    <span className="text-slate-400">Eficiencia de Inversión (Ads vs Rev)</span>
-                    <span className="text-sky-600">{metrics.adCostPercent.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-sky-500 rounded-full transition-all duration-700 ease-out" 
-                      style={{ width: `${Math.min(metrics.adCostPercent, 100)}%` }} 
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* BALANCE RÁPIDO */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900 rounded-3xl p-5 text-white shadow-xl flex flex-col justify-between h-32 premium-entrance">
-                <p className="text-[8px] font-black text-sky-400 uppercase tracking-widest">Cash Inflow</p>
-                <div className="space-y-1">
-                  <h4 className="text-xl font-black">{formatCurrency(metrics.revenue)}</h4>
-                  <p className="text-[7px] text-slate-400 font-bold uppercase">Recaudado total</p>
-                </div>
-              </div>
-              <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm flex flex-col justify-between h-32 premium-entrance">
-                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">CPA Promedio</p>
-                <div className="space-y-1">
-                  <h4 className="text-xl font-black text-slate-900">{formatCurrency(metrics.cpa)}</h4>
-                  <p className="text-[7px] text-sky-500 font-bold uppercase">Costo por venta</p>
                 </div>
               </div>
             </div>
@@ -673,7 +605,7 @@ export default function App() {
             </div>
             
             {metrics.filteredClients.length === 0 ? (
-              <EmptyState title="Sin Cierres" description="No hay transacciones registradas en este periodo." icon={Users} />
+              <EmptyState title="Sin Cierres" description="No hay transacciones registradas." icon={Users} />
             ) : (
               <div className="space-y-3">
                 {metrics.filteredClients.map(client => (
@@ -693,12 +625,7 @@ export default function App() {
                     <div className="flex flex-col items-end shrink-0 space-y-2">
                       <span className="px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 border border-emerald-100">CERRADO</span>
                       {client.link && (
-                        <a 
-                          href={client.link.startsWith('http') ? client.link : `https://${client.link}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="p-1.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-sky-50 hover:text-sky-600 transition-all active:scale-90 border border-slate-100"
-                        >
+                        <a href={client.link.startsWith('http') ? client.link : `https://${client.link}`} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-sky-50 hover:text-sky-600 transition-all border border-slate-100">
                           <ExternalLink size={10} />
                         </a>
                       )}
@@ -720,18 +647,6 @@ export default function App() {
                       <MetricCard label="CPA" value={metrics.cpa.toFixed(0)} isCurrency />
                       <MetricCard label="ROI Directo" value={metrics.roi.toFixed(2)} suffix="x" />
                    </div>
-                   <div className="p-6 bg-slate-900 rounded-3xl text-white premium-entrance">
-                     <p className="text-[9px] font-black text-sky-400 uppercase tracking-widest mb-4">Análisis de Atribución</p>
-                     <div className="space-y-3">
-                       <div className="flex justify-between items-center text-[10px] font-bold">
-                         <span className="text-slate-400">Eficiencia por Lead</span>
-                         <span className="text-white">{metrics.messages > 0 ? formatCurrency(metrics.adSpend / metrics.messages) : '₡0'}</span>
-                       </div>
-                       <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                         <div className="h-full bg-sky-500 w-3/4 rounded-full" />
-                       </div>
-                     </div>
-                   </div>
                 </div>
              ) : <EmptyState title="Sin actividad" description="Ingresa datos publicitarios para ver KPIs." />}
           </div>
@@ -746,9 +661,7 @@ export default function App() {
               <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-center premium-entrance">
                 <Sparkles size={28} className="text-sky-400 mx-auto mb-4" />
                 <h3 className="text-sm font-bold text-white mb-2 uppercase tracking-widest">Diagnóstico Gemini 3</h3>
-                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-6">Analizando KPIs</p>
-                <button 
-                  onClick={async () => {
+                <button onClick={async () => {
                     setIsLoadingDiagnosis(true);
                     try {
                       const res = await getBusinessDiagnosis({
@@ -757,31 +670,16 @@ export default function App() {
                       setDiagnosis(res);
                     } catch(e) { console.error(e); }
                     setIsLoadingDiagnosis(false);
-                  }} 
-                  disabled={isLoadingDiagnosis} 
-                  className="w-full py-4 bg-sky-600 text-white rounded-xl text-[9px] font-bold uppercase active:scale-95 transition-all tap-feedback"
-                >
+                  }} disabled={isLoadingDiagnosis} className="w-full py-4 bg-sky-600 text-white rounded-xl text-[9px] font-bold uppercase active:scale-95 transition-all">
                   {isLoadingDiagnosis ? "Procesando..." : "Ejecutar Diagnóstico"}
                 </button>
               </div>
             ) : (
               <div className="space-y-4 premium-entrance">
                 <div className={`p-6 rounded-2xl border-2 ${diagnosis.status === 'Saludable' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Estado: {diagnosis.status}</p>
-                   <p className="text-xs font-bold text-slate-800 leading-relaxed italic">"{diagnosis.diagnosis}"</p>
+                   <p className="text-xs font-bold text-slate-800 italic">"{diagnosis.diagnosis}"</p>
                 </div>
-                <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm">
-                  <p className="text-[9px] font-black text-sky-500 uppercase tracking-widest mb-3">Acciones Sugeridas</p>
-                  <div className="space-y-3">
-                    {diagnosis.actions.map((a, i) => (
-                      <div key={i} className="flex items-start space-x-3">
-                        <span className="text-sky-400 mt-0.5">•</span>
-                        <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">{a}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={() => setDiagnosis(null)} className="w-full text-[9px] font-black text-slate-300 uppercase hover:text-slate-900 transition-colors py-4">Volver a Analizar</button>
+                <button onClick={() => setDiagnosis(null)} className="w-full text-[9px] font-black text-slate-300 uppercase py-4">Volver a Analizar</button>
               </div>
             )}
           </div>
@@ -798,14 +696,33 @@ export default function App() {
               <button onClick={() => setIsFilterOpen(false)} className="p-2 bg-slate-50 rounded-lg text-slate-400 active:scale-90 transition-all"><X size={16} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
-              <div className="flex items-center justify-between border border-slate-100 p-3 rounded-xl">
-                <button onClick={() => setState(p => ({ ...p, viewingMonth: Math.max(0, p.viewingMonth - 1) }))} className="p-1 active:bg-slate-50 rounded-lg transition-all"><ChevronLeft size={16} /></button>
-                <span className="text-[10px] font-black text-slate-900 uppercase">{MONTH_NAMES[state.viewingMonth]}</span>
-                <button onClick={() => setState(p => ({ ...p, viewingMonth: Math.min(11, p.viewingMonth + 1) }))} className="p-1 active:bg-slate-50 rounded-lg transition-all"><ChevronRight size={16} /></button>
+              {/* Selector de Mes */}
+              <div className="flex items-center justify-between border border-slate-100 p-3 rounded-xl bg-slate-50/50">
+                <button 
+                  onClick={() => changeViewingMonth('prev')} 
+                  className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[state.viewingMonth]} {YEAR_ACTIVE}</span>
+                <button 
+                  onClick={() => changeViewingMonth('next')} 
+                  className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
+
+              {/* Grid del Calendario */}
               <div className="grid grid-cols-7 gap-y-1 text-center">
                 {WEEK_DAYS_SHORT.map(d => <span key={d} className="text-[8px] font-black text-slate-300 uppercase pb-2">{d}</span>)}
-                {Array.from({ length: (new Date(YEAR_ACTIVE, state.viewingMonth, 1).getDay() === 0 ? 6 : new Date(YEAR_ACTIVE, state.viewingMonth, 1).getDay() - 1) }).map((_, i) => <div key={i} />)}
+                {(() => {
+                  const days = getDaysInMonth(state.viewingMonth, YEAR_ACTIVE);
+                  if (days.length === 0) return null;
+                  const firstDayInGrid = days[0].date.getDay();
+                  const offset = firstDayInGrid === 0 ? 6 : firstDayInGrid - 1;
+                  return Array.from({ length: offset }).map((_, i) => <div key={`pad-${i}`} />);
+                })()}
                 {getDaysInMonth(state.viewingMonth, YEAR_ACTIVE).map(day => {
                   const key = getDateKey(day.date);
                   const hasData = !!state.dataStore[key];
@@ -822,10 +739,6 @@ export default function App() {
                   );
                 })}
               </div>
-              <div className="grid grid-cols-2 gap-3 pb-4">
-                <button onClick={() => selectRange('mes')} className="py-4 rounded-xl bg-slate-900 text-white text-[9px] font-bold uppercase active:scale-95 transition-all tap-feedback">Mes Completo</button>
-                <button onClick={() => selectRange('quincena')} className="py-4 rounded-xl bg-sky-50 text-sky-600 text-[9px] font-bold uppercase active:scale-95 transition-all tap-feedback">Quincena</button>
-              </div>
             </div>
           </div>
         </div>
@@ -833,8 +746,7 @@ export default function App() {
 
       {/* MODAL REGISTRO */}
       <DataEntryPanel 
-        isOpen={isEntryOpen} 
-        onClose={() => setIsEntryOpen(false)} 
+        isOpen={isEntryOpen} onClose={() => setIsEntryOpen(false)} 
         dateLabel={selectedDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
         currentData={state.dataStore[getDateKey(selectedDate)]}
         currentClients={state.clients.filter(c => c.dateKey === getDateKey(selectedDate))}
@@ -846,11 +758,7 @@ export default function App() {
         {NAVIGATION_TABS.map(tab => {
           const isActive = state.currentTab === tab.id;
           return (
-            <button 
-              key={tab.id} 
-              onClick={() => setState(prev => ({ ...prev, currentTab: tab.id }))} 
-              className={`flex flex-col items-center space-y-1 transition-all duration-200 tap-feedback ${isActive ? 'scale-105' : 'opacity-30'}`}
-            >
+            <button key={tab.id} onClick={() => setState(prev => ({ ...prev, currentTab: tab.id }))} className={`flex flex-col items-center space-y-1 transition-all duration-200 tap-feedback ${isActive ? 'scale-105' : 'opacity-30'}`}>
               <div className={`p-2.5 rounded-xl transition-all duration-200 ${isActive ? 'bg-sky-600 text-white shadow-lg' : 'text-slate-900'}`}>{tab.icon}</div>
               <span className="text-[7px] font-black uppercase tracking-widest">{tab.label}</span>
             </button>
