@@ -22,7 +22,9 @@ import {
   FileText,
   CalendarDays,
   CalendarRange,
-  CheckCircle2
+  CheckCircle2,
+  Calculator,
+  RotateCcw
 } from 'lucide-react';
 import { 
   SelectionMode, 
@@ -347,6 +349,116 @@ const DataEntryPanel = ({ isOpen, onClose, dateLabel, currentData, currentClient
   );
 };
 
+const ExpenseCalculatorModal = ({ isOpen, onClose, dataStore }: any) => {
+  const [viewingMonth, setViewingMonth] = useState(11); // Diciembre por defecto
+  const [viewingYear, setViewingYear] = useState(2025);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+
+  const toggleDate = (date: Date) => {
+    const key = getDateKey(date);
+    setSelectedKeys(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  const changeMonth = (dir: 'next' | 'prev') => {
+    let nextMonth = viewingMonth;
+    let nextYear = viewingYear;
+    if (dir === 'next') {
+      if (nextMonth === 11) { nextMonth = 0; nextYear++; } else { nextMonth++; }
+    } else {
+      if (nextMonth === 0) { nextMonth = 11; nextYear--; } else { nextMonth--; }
+    }
+    if (nextYear < 2025 || (nextYear === 2025 && nextMonth < 11)) return;
+    setViewingMonth(nextMonth);
+    setViewingYear(nextYear);
+  };
+
+  const totalExpense = useMemo(() => {
+    return selectedKeys.reduce((acc, key) => acc + (dataStore[key]?.adSpend || 0), 0);
+  }, [selectedKeys, dataStore]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center px-4 pb-8 sm:p-4 overflow-hidden fade-in-fast">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] premium-entrance">
+        
+        {/* Header Calculator */}
+        <div className="px-6 pt-6 pb-4 border-b border-slate-50 bg-slate-50/50 rounded-t-3xl">
+          <div className="flex justify-between items-start mb-4">
+             <div>
+               <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">Calculadora de Gasto</h3>
+               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Selecciona varios días</p>
+             </div>
+             <button onClick={onClose} className="p-2 bg-white rounded-lg text-slate-400 shadow-sm border border-slate-100 active:scale-90 transition-all"><X size={16} /></button>
+          </div>
+          
+          <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex justify-between items-center">
+             <div className="flex items-center space-x-3 text-slate-400">
+               <Calculator size={18} />
+               <span className="text-[10px] font-black uppercase tracking-widest">{selectedKeys.length} Días</span>
+             </div>
+             <div className="text-xl font-black text-slate-900">{formatCurrency(totalExpense)}</div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+          {/* Navigator */}
+          <div className="flex items-center justify-between border border-slate-100 p-3 rounded-xl bg-slate-50/50">
+            <button onClick={() => changeMonth('prev')} className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"><ChevronLeft size={16} /></button>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{MONTH_NAMES[viewingMonth]}</span>
+              <span className="text-[8px] font-bold text-slate-400">{viewingYear}</span>
+            </div>
+            <button onClick={() => changeMonth('next')} className="p-2 hover:bg-white rounded-lg transition-all active:scale-90 shadow-sm border border-transparent hover:border-slate-100"><ChevronRight size={16} /></button>
+          </div>
+
+          {/* Grid */}
+          <div className="grid grid-cols-7 gap-y-2 text-center">
+             {WEEK_DAYS_SHORT.map(d => <span key={d} className="text-[8px] font-black text-slate-300 uppercase pb-2">{d}</span>)}
+             {(() => {
+                const days = getDaysInMonth(viewingMonth, viewingYear);
+                if (days.length === 0) return null;
+                const offset = days[0].date.getDay() === 0 ? 6 : days[0].date.getDay() - 1;
+                return Array.from({ length: offset }).map((_, i) => <div key={`pad-${i}`} />);
+             })()}
+             {getDaysInMonth(viewingMonth, viewingYear).map(day => {
+               const key = getDateKey(day.date);
+               const isSelected = selectedKeys.includes(key);
+               const hasData = !!dataStore[key]?.adSpend;
+               
+               return (
+                 <button 
+                   key={day.dayNumber} 
+                   onClick={() => toggleDate(day.date)} 
+                   className={`relative py-3 flex flex-col items-center justify-center rounded-xl transition-all active:scale-90 border ${isSelected ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-500 border-transparent hover:border-slate-100'}`}
+                 >
+                   <span className="text-[11px] font-bold">{day.dayNumber}</span>
+                   {hasData && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-emerald-400 rounded-full" />}
+                 </button>
+               );
+             })}
+          </div>
+        </div>
+        
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-white rounded-b-3xl">
+           <button onClick={() => setSelectedKeys([])} className="flex items-center space-x-2 px-4 py-3 rounded-xl bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all">
+             <RotateCcw size={12} />
+             <span>Limpiar</span>
+           </button>
+           <button onClick={onClose} className="px-6 py-3 rounded-xl bg-sky-600 text-white text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg">
+             Listo
+           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- APP PRINCIPAL ---
 
 export default function App() {
@@ -392,6 +504,7 @@ export default function App() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<'days' | 'months'>('days');
   const [isEntryOpen, setIsEntryOpen] = useState(false);
+  const [isExpenseCalcOpen, setIsExpenseCalcOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date(state.activeRange.start));
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
   const [isLoadingDiagnosis, setIsLoadingDiagnosis] = useState(false);
@@ -709,7 +822,16 @@ export default function App() {
 
         {state.currentTab === 'ads' && (
           <div className="space-y-6 fade-in-fast">
-             <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Marketing & Tráfico</h2>
+             <div className="flex items-center justify-between px-1">
+                <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Marketing & Tráfico</h2>
+                <button 
+                  onClick={() => setIsExpenseCalcOpen(true)}
+                  className="flex items-center space-x-2 bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-sm active:scale-95 transition-all"
+                >
+                  <Calculator size={12} />
+                  <span className="text-[8px] font-black uppercase tracking-widest">Gasto</span>
+                </button>
+             </div>
              {metrics.daysWithData > 0 ? (
                 <div className="space-y-3">
                    <MetricCard label="Gasto en Ads" value={metrics.adSpend} isCurrency icon={Target} />
@@ -755,6 +877,13 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* MODAL CALCULADORA GASTO */}
+      <ExpenseCalculatorModal 
+        isOpen={isExpenseCalcOpen} 
+        onClose={() => setIsExpenseCalcOpen(false)}
+        dataStore={state.dataStore}
+      />
 
       {/* NAVEGADOR CALENDARIO */}
       {isFilterOpen && (
